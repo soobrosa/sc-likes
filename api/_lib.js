@@ -224,7 +224,7 @@ export function renderPage(mixes, songs) {
       <div class="toolbar">
         <div class="tabs">
           <button class="active" data-filter="mix">Mixes <span class="count">(${mixes.length})</span></button>
-          <button class="active" data-filter="song">Songs <span class="count">(${songs.length})</span></button>
+          <button data-filter="song">Songs <span class="count">(${songs.length})</span></button>
         </div>
         <input type="text" id="search" placeholder="Filter...">
       </div>
@@ -258,7 +258,8 @@ export function renderPage(mixes, songs) {
     widget = SC.Widget(iframe);
     widget.bind(SC.Widget.Events.READY, function() {
       widget.bind(SC.Widget.Events.FINISH, function() {
-        const items = Array.from(document.querySelectorAll('#tracks li:not(.hidden)'));
+        const type = currentLi.dataset.type;
+        const items = Array.from(document.querySelectorAll('#tracks li[data-type="' + type + '"]'));
         const idx = items.indexOf(currentLi);
         if (idx >= 0 && idx < items.length - 1) {
           const nextLink = items[idx + 1].querySelector('a');
