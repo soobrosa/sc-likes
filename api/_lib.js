@@ -161,6 +161,7 @@ export function renderPage(mixes, songs) {
 <link href="https://fonts.googleapis.com/css2?family=Courier+Prime&family=Oswald:wght@400;700&display=swap" rel="stylesheet">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-padding-top: var(--top-h, 0px); }
   body { font-family: 'Courier Prime', monospace; background: #fff; color: #000; padding: 2rem; max-width: 1200px; margin: 0 auto; }
 
   .sticky-top { position: sticky; top: 0; z-index: 100; background: #fff; padding-bottom: 0.5rem; }
@@ -189,7 +190,7 @@ export function renderPage(mixes, songs) {
   #player iframe { width: 100%; height: 125px; border: none; }
 
   .year-group { margin-bottom: 2rem; }
-  .year-header { font-family: 'Oswald', sans-serif; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 2px solid #000; padding-bottom: 0.2rem; margin-bottom: 0.75rem; position: sticky; top: 0; background: #fff; z-index: 10; padding-top: 0.3rem; }
+  .year-header { font-family: 'Oswald', sans-serif; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 2px solid #000; padding-bottom: 0.2rem; margin-bottom: 0.75rem; position: sticky; top: var(--top-h, 0px); background: #fff; z-index: 10; padding-top: 0.3rem; }
   .year-header .count { font-size: 0.8rem; font-weight: 400; color: #888; }
 
   ul { list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
@@ -240,33 +241,58 @@ export function renderPage(mixes, songs) {
 
 <script src="https://w.soundcloud.com/player/api.js"></script>
 <script>
-  let widget, currentLi;
+  const iframe = document.getElementById('sc-widget');
+  const player = document.getElementById('player');
+  const stickyTop = document.querySelector('.sticky-top');
+  const OPTS = { auto_play: true, color: '000000', show_artwork: true, show_comments: false, show_playcount: false, show_teaser: false, visual: false };
+  let widget = null, currentLi = null, advancing = false, bound = false;
+
+  function updateTopHeight() {
+    document.documentElement.style.setProperty('--top-h', stickyTop.offsetHeight + 'px');
+  }
+  updateTopHeight();
+  if (window.ResizeObserver) new ResizeObserver(updateTopHeight).observe(stickyTop);
+  window.addEventListener('resize', updateTopHeight);
+
+  function advance() {
+    if (!currentLi) return;
+    const type = currentLi.dataset.type;
+    const items = Array.from(document.querySelectorAll('#tracks li[data-type="' + type + '"]'));
+    const idx = items.indexOf(currentLi);
+    if (idx >= 0 && idx < items.length - 1) {
+      const nextLink = items[idx + 1].querySelector('a');
+      if (nextLink) play(nextLink);
+    }
+  }
+
+  function bindEvents() {
+    if (bound) return;
+    bound = true;
+    widget.bind(SC.Widget.Events.PLAY, function() { advancing = false; });
+    widget.bind(SC.Widget.Events.FINISH, function() { if (!advancing) { advancing = true; advance(); } });
+    widget.bind(SC.Widget.Events.PLAY_PROGRESS, function(e) {
+      if (!advancing && e && e.relativePosition >= 0.999) { advancing = true; advance(); }
+    });
+  }
 
   function play(el) {
     const url = el.dataset.url;
     const li = el.closest('li');
-    const iframe = document.getElementById('sc-widget');
 
     if (currentLi) currentLi.classList.remove('playing');
     li.classList.add('playing');
     currentLi = li;
+    advancing = false;
+    player.classList.add('visible');
 
-    const embedUrl = 'https://w.soundcloud.com/player/?url=' + encodeURIComponent(url) + '&auto_play=true&color=000000&show_artwork=true&show_comments=false&show_playcount=false&show_teaser=false&visual=false';
-    iframe.src = embedUrl;
-    document.getElementById('player').classList.add('visible');
-
-    widget = SC.Widget(iframe);
-    widget.bind(SC.Widget.Events.READY, function() {
-      widget.bind(SC.Widget.Events.FINISH, function() {
-        const type = currentLi.dataset.type;
-        const items = Array.from(document.querySelectorAll('#tracks li[data-type="' + type + '"]'));
-        const idx = items.indexOf(currentLi);
-        if (idx >= 0 && idx < items.length - 1) {
-          const nextLink = items[idx + 1].querySelector('a');
-          if (nextLink) play(nextLink);
-        }
-      });
-    });
+    if (!widget) {
+      iframe.src = 'https://w.soundcloud.com/player/?url=' + encodeURIComponent(url) + '&auto_play=true&color=000000&show_artwork=true&show_comments=false&show_playcount=false&show_teaser=false&visual=false';
+      widget = SC.Widget(iframe);
+      widget.bind(SC.Widget.Events.READY, bindEvents);
+    } else {
+      widget.load(url, OPTS);
+    }
+    updateTopHeight();
   }
 
   document.querySelectorAll('.tabs button').forEach(btn => {
