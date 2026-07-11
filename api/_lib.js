@@ -257,7 +257,7 @@ export function renderPage(mixes, songs) {
   function advance() {
     if (!currentLi) return;
     const type = currentLi.dataset.type;
-    const items = Array.from(document.querySelectorAll('#tracks li[data-type="' + type + '"]'));
+    const items = Array.from(document.querySelectorAll('#tracks li[data-type="' + type + '"]:not(.hidden)'));
     const idx = items.indexOf(currentLi);
     if (idx >= 0 && idx < items.length - 1) {
       const nextLink = items[idx + 1].querySelector('a');
@@ -295,10 +295,21 @@ export function renderPage(mixes, songs) {
     updateTopHeight();
   }
 
+  function scrollToFirstVisibleYear() {
+    const groups = document.querySelectorAll('#tracks .year-group');
+    for (const g of groups) {
+      if (g.style.display !== 'none') {
+        g.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        break;
+      }
+    }
+  }
+
   document.querySelectorAll('.tabs button').forEach(btn => {
     btn.addEventListener('click', () => {
       btn.classList.toggle('active');
       applyFilter();
+      scrollToFirstVisibleYear();
     });
   });
 
