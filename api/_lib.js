@@ -290,7 +290,7 @@ export function renderPage(mixes, songs) {
       widget = SC.Widget(iframe);
       widget.bind(SC.Widget.Events.READY, bindEvents);
     } else {
-      widget.load(url, OPTS);
+      widget.load(url, Object.assign({}, OPTS, { callback: function() { widget.play(); } }));
     }
     updateTopHeight();
   }
