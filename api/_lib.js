@@ -245,7 +245,7 @@ export function renderPage(mixes, songs) {
   const player = document.getElementById('player');
   const stickyTop = document.querySelector('.sticky-top');
   const OPTS = { auto_play: true, color: '000000', show_artwork: true, show_comments: false, show_playcount: false, show_teaser: false, visual: false };
-  let widget = null, currentLi = null, advancing = false, bound = false;
+  let widget = null, currentLi = null, advancing = false, bound = false, advanceTimer = null;
 
   function updateTopHeight() {
     document.documentElement.style.setProperty('--top-h', stickyTop.offsetHeight + 'px');
@@ -265,13 +265,32 @@ export function renderPage(mixes, songs) {
     }
   }
 
+  function clearAdvanceTimer() {
+    if (advanceTimer) { clearTimeout(advanceTimer); advanceTimer = null; }
+  }
+
+  function scheduleAdvance() {
+    clearAdvanceTimer();
+    widget.getDuration(function(dur) {
+      widget.getPosition(function(pos) {
+        const remaining = Math.max(0, (dur || 0) - (pos || 0));
+        if (!remaining) return;
+        advanceTimer = setTimeout(function() {
+          advanceTimer = null;
+          if (!advancing) { advancing = true; advance(); }
+        }, remaining + 500);
+      });
+    });
+  }
+
   function bindEvents() {
     if (bound) return;
     bound = true;
-    widget.bind(SC.Widget.Events.PLAY, function() { advancing = false; });
-    widget.bind(SC.Widget.Events.FINISH, function() { if (!advancing) { advancing = true; advance(); } });
-    widget.bind(SC.Widget.Events.PLAY_PROGRESS, function(e) {
-      if (!advancing && e && e.relativePosition >= 0.999) { advancing = true; advance(); }
+    widget.bind(SC.Widget.Events.PLAY, function() { advancing = false; scheduleAdvance(); });
+    widget.bind(SC.Widget.Events.PAUSE, clearAdvanceTimer);
+    widget.bind(SC.Widget.Events.FINISH, function() {
+      clearAdvanceTimer();
+      if (!advancing) { advancing = true; advance(); }
     });
   }
 
