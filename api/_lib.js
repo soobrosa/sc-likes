@@ -187,7 +187,8 @@ export function renderPage(mixes, songs) {
 
   #player { display: none; margin-top: 0.5rem; border-bottom: 4px solid #000; padding-bottom: 0.5rem; }
   #player.visible { display: block; }
-  #player iframe { width: 100%; height: 125px; border: none; }
+  #player iframe { display: none; width: 100%; height: 125px; border: none; }
+  #player iframe.active { display: block; }
 
   .year-group { margin-bottom: 2rem; }
   .year-header { font-family: 'Oswald', sans-serif; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 2px solid #000; padding-bottom: 0.2rem; margin-bottom: 0.75rem; position: sticky; top: var(--top-h, 0px); background: #fff; z-index: 10; padding-top: 0.3rem; }
@@ -232,7 +233,10 @@ export function renderPage(mixes, songs) {
       <div class="year-nav" id="year-nav">${yearNav(groups)}</div>
     </div>
   </div>
-  <div id="player"><iframe id="sc-widget" src="" allow="autoplay"></iframe></div>
+  <div id="player">
+    <iframe id="sc-widget-a" src="" allow="autoplay"></iframe>
+    <iframe id="sc-widget-b" src="" allow="autoplay"></iframe>
+  </div>
 </div>
 
 <div id="tracks">
@@ -241,11 +245,14 @@ export function renderPage(mixes, songs) {
 
 <script src="https://w.soundcloud.com/player/api.js"></script>
 <script>
-  const iframe = document.getElementById('sc-widget');
   const player = document.getElementById('player');
   const stickyTop = document.querySelector('.sticky-top');
   const OPTS = { auto_play: true, color: '000000', show_artwork: true, show_comments: false, show_playcount: false, show_teaser: false, visual: false };
-  let widget = null, currentLi = null, advancing = false, bound = false, advanceTimer = null;
+  const slots = [
+    { iframe: document.getElementById('sc-widget-a'), widget: null, url: null, ready: false, loadToken: 0, readyCallbacks: [] },
+    { iframe: document.getElementById('sc-widget-b'), widget: null, url: null, ready: false, loadToken: 0, readyCallbacks: [] }
+  ];
+  let activeSlot = null, currentLi = null, advancing = false, preloadTimer = null, advanceTimer = null;
 
   function updateTopHeight() {
     document.documentElement.style.setProperty('--top-h', stickyTop.offsetHeight + 'px');
@@ -254,14 +261,42 @@ export function renderPage(mixes, songs) {
   if (window.ResizeObserver) new ResizeObserver(updateTopHeight).observe(stickyTop);
   window.addEventListener('resize', updateTopHeight);
 
-  function advance() {
-    if (!currentLi) return;
-    const type = currentLi.dataset.type;
+  function getNextLink(li) {
+    if (!li) return null;
+    const type = li.dataset.type;
     const items = Array.from(document.querySelectorAll('#tracks li[data-type="' + type + '"]:not(.hidden)'));
-    const idx = items.indexOf(currentLi);
+    const idx = items.indexOf(li);
     if (idx >= 0 && idx < items.length - 1) {
-      const nextLink = items[idx + 1].querySelector('a');
-      if (nextLink) play(nextLink);
+      return items[idx + 1].querySelector('a');
+    }
+    return null;
+  }
+
+  function widgetUrl(url, autoPlay) {
+    return 'https://w.soundcloud.com/player/?url=' + encodeURIComponent(url) +
+      '&auto_play=' + autoPlay +
+      '&color=000000&show_artwork=true&show_comments=false&show_playcount=false&show_teaser=false&visual=false';
+  }
+
+  function finish(slot) {
+    if (slot !== activeSlot || advancing) return;
+    const nextLink = getNextLink(currentLi);
+    if (!nextLink) return;
+
+    advancing = true;
+    const nextUrl = nextLink.dataset.url;
+    const prepared = slots.find(function(candidate) {
+      return candidate !== activeSlot && candidate.url === nextUrl;
+    });
+
+    if (prepared) {
+      whenReady(prepared, function() {
+        if (advancing && getNextLink(currentLi) === nextLink) {
+          activate(prepared, nextLink.closest('li'), true);
+        }
+      });
+    } else {
+      play(nextLink, true);
     }
   }
 
@@ -269,48 +304,133 @@ export function renderPage(mixes, songs) {
     if (advanceTimer) { clearTimeout(advanceTimer); advanceTimer = null; }
   }
 
-  function scheduleAdvance() {
+  function scheduleAdvance(slot) {
     clearAdvanceTimer();
-    widget.getDuration(function(dur) {
-      widget.getPosition(function(pos) {
+    const token = slot.loadToken;
+    slot.widget.getDuration(function(dur) {
+      slot.widget.getPosition(function(pos) {
+        if (slot !== activeSlot || token !== slot.loadToken) return;
         const remaining = Math.max(0, (dur || 0) - (pos || 0));
         if (!remaining) return;
         advanceTimer = setTimeout(function() {
           advanceTimer = null;
-          if (!advancing) { advancing = true; advance(); }
+          finish(slot);
         }, remaining + 500);
       });
     });
   }
 
-  function bindEvents() {
-    if (bound) return;
-    bound = true;
-    widget.bind(SC.Widget.Events.PLAY, function() { advancing = false; scheduleAdvance(); });
-    widget.bind(SC.Widget.Events.PAUSE, clearAdvanceTimer);
-    widget.bind(SC.Widget.Events.FINISH, function() {
-      clearAdvanceTimer();
-      if (!advancing) { advancing = true; advance(); }
+  function markReady(slot, token) {
+    if (token !== slot.loadToken) return;
+    slot.ready = true;
+    const callbacks = slot.readyCallbacks.splice(0);
+    callbacks.forEach(function(callback) { callback(); });
+  }
+
+  function whenReady(slot, callback) {
+    if (slot.ready) callback();
+    else slot.readyCallbacks.push(callback);
+  }
+
+  function bindEvents(slot, token) {
+    slot.widget.bind(SC.Widget.Events.READY, function() {
+      markReady(slot, token);
+    });
+    slot.widget.bind(SC.Widget.Events.PLAY, function() {
+      if (slot === activeSlot) {
+        advancing = false;
+        scheduleAdvance(slot);
+      }
+    });
+    slot.widget.bind(SC.Widget.Events.PAUSE, function() {
+      if (slot === activeSlot) clearAdvanceTimer();
+    });
+    slot.widget.bind(SC.Widget.Events.FINISH, function() {
+      if (slot === activeSlot) clearAdvanceTimer();
+      finish(slot);
+    });
+    slot.widget.bind(SC.Widget.Events.PLAY_PROGRESS, function(e) {
+      if (slot === activeSlot && !advancing && e && e.relativePosition >= 0.999) finish(slot);
     });
   }
 
-  function play(el) {
-    const url = el.dataset.url;
-    const li = el.closest('li');
+  function loadSlot(slot, url, autoPlay) {
+    const token = ++slot.loadToken;
+    slot.url = url;
+    slot.ready = false;
+    slot.readyCallbacks = [];
 
+    if (!slot.widget) {
+      slot.iframe.src = widgetUrl(url, autoPlay);
+      slot.widget = SC.Widget(slot.iframe);
+      bindEvents(slot, token);
+      return;
+    }
+
+    slot.widget.load(url, Object.assign({}, OPTS, {
+      auto_play: autoPlay,
+      callback: function() { markReady(slot, token); }
+    }));
+  }
+
+  function prepareNext() {
+    if (!activeSlot || !currentLi) return;
+    const nextLink = getNextLink(currentLi);
+    if (!nextLink) return;
+
+    const standby = slots.find(function(slot) { return slot !== activeSlot; });
+    const nextUrl = nextLink.dataset.url;
+    if (standby.url !== nextUrl) loadSlot(standby, nextUrl, false);
+  }
+
+  function schedulePrepareNext() {
+    clearTimeout(preloadTimer);
+    preloadTimer = setTimeout(prepareNext, 150);
+  }
+
+  function selectSlot(slot, li, isAdvance) {
+    const previousSlot = activeSlot;
+    clearAdvanceTimer();
     if (currentLi) currentLi.classList.remove('playing');
     li.classList.add('playing');
     currentLi = li;
-    advancing = false;
+    activeSlot = slot;
+    advancing = isAdvance;
+    slots.forEach(function(candidate) {
+      candidate.iframe.classList.toggle('active', candidate === activeSlot);
+    });
     player.classList.add('visible');
+    if (previousSlot && previousSlot !== slot && previousSlot.widget) previousSlot.widget.pause();
+  }
 
-    if (!widget) {
-      iframe.src = 'https://w.soundcloud.com/player/?url=' + encodeURIComponent(url) + '&auto_play=true&color=000000&show_artwork=true&show_comments=false&show_playcount=false&show_teaser=false&visual=false';
-      widget = SC.Widget(iframe);
-      widget.bind(SC.Widget.Events.READY, bindEvents);
-    } else {
-      widget.load(url, Object.assign({}, OPTS, { callback: function() { widget.play(); } }));
+  function activate(slot, li, isAdvance) {
+    selectSlot(slot, li, isAdvance);
+    slot.widget.play();
+    prepareNext();
+    updateTopHeight();
+  }
+
+  function play(el, isAdvance) {
+    const url = el.dataset.url;
+    const li = el.closest('li');
+    const prepared = slots.find(function(slot) {
+      return slot.url === url && slot.ready;
+    });
+
+    if (prepared) {
+      activate(prepared, li, Boolean(isAdvance));
+      return;
     }
+
+    const slot = isAdvance && activeSlot
+      ? slots.find(function(candidate) { return candidate !== activeSlot; })
+      : activeSlot || slots[0];
+    selectSlot(slot, li, Boolean(isAdvance));
+    loadSlot(slot, url, true);
+    whenReady(slot, function() {
+      if (activeSlot === slot && currentLi === li) slot.widget.play();
+    });
+    prepareNext();
     updateTopHeight();
   }
 
@@ -349,6 +469,7 @@ export function renderPage(mixes, songs) {
       const visible = g.querySelectorAll('li:not(.hidden)').length;
       g.style.display = visible ? '' : 'none';
     });
+    schedulePrepareNext();
   }
   search.addEventListener('input', applyFilter);
 </script>
