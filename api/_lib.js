@@ -3,6 +3,7 @@ const MIX_KEYWORDS = /\b(mixtape|podcast|dj set|session|live at|live @|@ |b2b|bo
 const MIX_KEYWORDS_NO_PARENS = /\b(mix|dj )\b/i;
 const MIX_DURATION_MS = 30 * 60 * 1000;
 const CACHE_KEY = 'sc-likes-tracks';
+const COLLECTIONS_KEY = 'sc-likes-year-collections';
 const CACHE_TTL_MS = 60 * 60 * 1000;
 
 const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
@@ -41,6 +42,72 @@ export async function cacheSet(tracks) {
     headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` },
     body: JSON.stringify({ tracks: tracks.map(slimTrack), ts: Date.now() })
   });
+}
+
+async function redisCommand(command) {
+  if (!UPSTASH_URL || !UPSTASH_TOKEN) {
+    throw new Error('Redis is not configured');
+  }
+  const res = await fetch(UPSTASH_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${UPSTASH_TOKEN}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(command)
+  });
+  if (!res.ok) throw new Error(`Redis request failed (${res.status})`);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data.result;
+}
+
+function parseCollections(raw) {
+  if (!raw) return {};
+  const collections = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  return collections && typeof collections === 'object' && !Array.isArray(collections)
+    ? collections
+    : {};
+}
+
+export async function collectionsGet() {
+  const raw = await redisCommand(['GET', COLLECTIONS_KEY]);
+  return parseCollections(raw);
+}
+
+export async function collectionAdd(track) {
+  const year = String(new Date(track.created_at).getFullYear());
+  const item = {
+    id: String(track.id),
+    title: track.title,
+    artist: track.user.username,
+    url: track.permalink_url,
+    meta: `${fmtDuration(track.duration)} · ${fmtDate(track.created_at)}`
+  };
+  const script = `
+    local raw = redis.call('GET', KEYS[1])
+    local collections = {}
+    if raw then collections = cjson.decode(raw) end
+    local items = collections[ARGV[1]] or {}
+    for _, item in ipairs(items) do
+      if tostring(item.id) == ARGV[2] then return raw end
+    end
+    table.insert(items, cjson.decode(ARGV[3]))
+    collections[ARGV[1]] = items
+    local updated = cjson.encode(collections)
+    redis.call('SET', KEYS[1], updated)
+    return updated
+  `;
+  const raw = await redisCommand([
+    'EVAL',
+    script,
+    1,
+    COLLECTIONS_KEY,
+    year,
+    item.id,
+    JSON.stringify(item)
+  ]);
+  return parseCollections(raw);
 }
 
 export async function getClientId() {
@@ -111,7 +178,8 @@ function fmtDate(iso) {
 }
 
 function renderTrack(t, type) {
-  return `<li data-title="${esc(t.title)}" data-artist="${esc(t.user.username)}" data-type="${type}">
+  const year = new Date(t.created_at).getFullYear();
+  return `<li data-id="${t.id}" data-title="${esc(t.title)}" data-artist="${esc(t.user.username)}" data-type="${type}" data-year="${year}">
     <a href="#" data-url="${esc(t.permalink_url)}" onclick="play(this);return false">
       <div class="track-title">${esc(t.title)}</div>
       <div class="track-artist">${esc(t.user.username)}</div>
@@ -187,8 +255,19 @@ export function renderPage(mixes, songs) {
 
   #player { display: none; margin-top: 0.5rem; border-bottom: 4px solid #000; padding-bottom: 0.5rem; }
   #player.visible { display: block; }
+  .player-actions { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem; }
+  #collect-current { font-family: 'Oswald', sans-serif; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; background: #000; color: #fff; border: 2px solid #000; padding: 0.25rem 0.6rem; cursor: pointer; }
+  #collect-current:hover:not(:disabled) { background: #fff; color: #000; }
+  #collect-current:disabled { background: #ddd; border-color: #ddd; color: #777; cursor: default; }
+  #collect-status { font-size: 0.7rem; color: #666; }
   #player iframe { display: none; width: 100%; height: 125px; border: none; }
   #player iframe.active { display: block; }
+
+  #collections { margin: 1.5rem 0 2rem; border: 2px solid #000; padding: 1rem; }
+  #collections[hidden] { display: none; }
+  #collections h2 { font-family: 'Oswald', sans-serif; font-size: 1.1rem; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.75rem; }
+  .collection-year + .collection-year { margin-top: 1rem; }
+  .collection-year h3 { font-family: 'Oswald', sans-serif; font-size: 1rem; border-bottom: 1px solid #000; margin-bottom: 0.5rem; }
 
   .year-group { margin-bottom: 2rem; }
   .year-header { font-family: 'Oswald', sans-serif; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 2px solid #000; padding-bottom: 0.2rem; margin-bottom: 0.75rem; position: sticky; top: var(--top-h, 0px); background: #fff; z-index: 10; padding-top: 0.3rem; }
@@ -234,10 +313,19 @@ export function renderPage(mixes, songs) {
     </div>
   </div>
   <div id="player">
+    <div class="player-actions">
+      <button id="collect-current" type="button" disabled>Collect current mix</button>
+      <span id="collect-status" aria-live="polite"></span>
+    </div>
     <iframe id="sc-widget-a" src="" allow="autoplay"></iframe>
     <iframe id="sc-widget-b" src="" allow="autoplay"></iframe>
   </div>
 </div>
+
+<section id="collections" hidden>
+  <h2>Collected mixes</h2>
+  <div id="collection-groups"></div>
+</section>
 
 <div id="tracks">
   ${renderYearGroups(groups)}
@@ -247,12 +335,131 @@ export function renderPage(mixes, songs) {
 <script>
   const player = document.getElementById('player');
   const stickyTop = document.querySelector('.sticky-top');
+  const collectButton = document.getElementById('collect-current');
+  const collectStatus = document.getElementById('collect-status');
+  const collectionsSection = document.getElementById('collections');
+  const collectionGroups = document.getElementById('collection-groups');
   const OPTS = { auto_play: true, color: '000000', show_artwork: true, show_comments: false, show_playcount: false, show_teaser: false, visual: false };
   const slots = [
     { iframe: document.getElementById('sc-widget-a'), widget: null, url: null, ready: false, loadToken: 0, readyCallbacks: [] },
     { iframe: document.getElementById('sc-widget-b'), widget: null, url: null, ready: false, loadToken: 0, readyCallbacks: [] }
   ];
   let activeSlot = null, currentLi = null, advancing = false, preloadTimer = null, advanceTimer = null;
+  let collections = {}, collectionsReady = false;
+
+  async function loadCollections() {
+    try {
+      const response = await fetch('/api/collections', { cache: 'no-store' });
+      if (!response.ok) throw new Error('Could not load collections');
+      collections = await response.json();
+      collectionsReady = true;
+      renderCollections();
+      updateCollectButton();
+    } catch (e) {
+      collectionsReady = false;
+      collectButton.disabled = true;
+      collectButton.textContent = 'Collections unavailable';
+      collectStatus.textContent = 'Could not load saved mixes';
+    }
+  }
+
+  function isCollected(li) {
+    if (!li || li.dataset.type !== 'mix') return false;
+    const items = collections[li.dataset.year] || [];
+    return items.some(function(item) {
+      return String(item.id) === li.dataset.id || item.url === li.querySelector('a').dataset.url;
+    });
+  }
+
+  function updateCollectButton() {
+    collectStatus.textContent = '';
+    if (!collectionsReady) {
+      collectButton.disabled = true;
+      collectButton.textContent = 'Loading collections';
+      return;
+    }
+    if (!currentLi || currentLi.dataset.type !== 'mix') {
+      collectButton.disabled = true;
+      collectButton.textContent = currentLi ? 'Mixes only' : 'Collect current mix';
+      return;
+    }
+    const year = currentLi.dataset.year;
+    const collected = isCollected(currentLi);
+    collectButton.disabled = collected;
+    collectButton.textContent = collected ? 'Collected in ' + year : 'Collect in ' + year;
+  }
+
+  function renderCollections() {
+    collectionGroups.replaceChildren();
+    const years = Object.keys(collections)
+      .filter(function(year) { return Array.isArray(collections[year]) && collections[year].length; })
+      .sort(function(a, b) { return Number(b) - Number(a); });
+    collectionsSection.hidden = years.length === 0;
+
+    years.forEach(function(year) {
+      const group = document.createElement('div');
+      group.className = 'collection-year';
+      const heading = document.createElement('h3');
+      heading.textContent = year + ' (' + collections[year].length + ')';
+      const list = document.createElement('ul');
+
+      collections[year].forEach(function(item) {
+        const li = document.createElement('li');
+        li.dataset.id = item.id;
+        li.dataset.title = item.title;
+        li.dataset.artist = item.artist;
+        li.dataset.type = 'mix';
+        li.dataset.year = year;
+        const link = document.createElement('a');
+        link.href = '#';
+        link.dataset.url = item.url;
+        link.addEventListener('click', function(event) {
+          event.preventDefault();
+          play(link);
+        });
+        const title = document.createElement('div');
+        title.className = 'track-title';
+        title.textContent = item.title;
+        const artist = document.createElement('div');
+        artist.className = 'track-artist';
+        artist.textContent = item.artist;
+        const meta = document.createElement('div');
+        meta.className = 'track-meta';
+        meta.textContent = item.meta;
+        link.append(title, artist, meta);
+        li.appendChild(link);
+        list.appendChild(li);
+      });
+
+      group.append(heading, list);
+      collectionGroups.appendChild(group);
+    });
+  }
+
+  collectButton.addEventListener('click', async function() {
+    if (!currentLi || currentLi.dataset.type !== 'mix' || isCollected(currentLi)) return;
+    const year = currentLi.dataset.year;
+    collectButton.disabled = true;
+    collectButton.textContent = 'Saving...';
+    collectStatus.textContent = '';
+    try {
+      const response = await fetch('/api/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trackId: currentLi.dataset.id })
+      });
+      if (!response.ok) throw new Error('Could not save collection');
+      collections = await response.json();
+      renderCollections();
+      updateCollectButton();
+      collectStatus.textContent = 'Added to ' + year;
+    } catch (e) {
+      updateCollectButton();
+      collectStatus.textContent = 'Could not save this mix';
+    }
+  });
+
+  loadCollections();
 
   function updateTopHeight() {
     document.documentElement.style.setProperty('--top-h', stickyTop.offsetHeight + 'px');
@@ -396,6 +603,7 @@ export function renderPage(mixes, songs) {
     currentLi = li;
     activeSlot = slot;
     advancing = isAdvance;
+    updateCollectButton();
     slots.forEach(function(candidate) {
       candidate.iframe.classList.toggle('active', candidate === activeSlot);
     });

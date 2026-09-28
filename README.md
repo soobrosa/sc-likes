@@ -10,6 +10,7 @@ Live at [sc-likes.vercel.app](https://sc-likes.vercel.app)
 - **Mixes** and **Songs** toggle buttons (non-exclusive) to filter by type, plus a text search
 - Year navigation bar for quick jumping
 - Clicking a track plays it inline via the SoundCloud embedded player; auto-advances to the next visible track when finished
+- The current mix can be collected into a Redis-backed list named for its publication year
 - Shared logic lives in `api/_lib.js`
 
 ## Track classification
@@ -26,10 +27,13 @@ Uses [Upstash Redis](https://upstash.com) (REST API, zero npm dependencies) for 
 - Cached data includes a timestamp; if fresh (<1 hour), served immediately
 - If stale, SoundCloud is fetched inline and cache is updated; stale data is served if refresh fails
 - Only the fields needed for rendering are stored (~200-300 bytes per track)
+- Collected mixes are stored in Redis and shared across browsers and devices
+- Any visitor can add a liked mix; the server rejects tracks outside the account's likes
 - `api/refresh.js` is available as a manual endpoint to force a cache refresh
 - Vercel CDN cache (`s-maxage=3600, stale-while-revalidate`) sits in front as an additional layer
 
-The app works without Redis -- it just fetches from SoundCloud on every request.
+Track browsing works without Redis by fetching from SoundCloud on every request.
+Collecting mixes requires Redis.
 
 ## Setup
 
@@ -51,6 +55,7 @@ To verify Redis is working, visit `/api/refresh` -- it returns `{"updated": true
 ```
 api/
   _lib.js      Shared: SoundCloud fetching, classification, rendering, cache helpers
+  collections.js  Read and update Redis-backed year collections
   index.js     Main handler: serve from cache, stale-while-revalidate, SoundCloud fallback
   refresh.js   Manual endpoint: force refresh cache from SoundCloud
 vercel.json    Rewrites
