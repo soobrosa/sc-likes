@@ -1,5 +1,10 @@
 import { cacheGet, cacheSet, fetchLikesFromSoundCloud, isMix, renderPage } from './_lib.js';
 
+async function refreshCache() {
+  const fresh = await fetchLikesFromSoundCloud();
+  await cacheSet(fresh);
+}
+
 export default async function handler(req, res) {
   try {
     let { tracks, stale } = await cacheGet();
@@ -8,13 +13,9 @@ export default async function handler(req, res) {
       tracks = await fetchLikesFromSoundCloud();
       await cacheSet(tracks);
     } else if (stale) {
-      try {
-        const fresh = await fetchLikesFromSoundCloud();
-        await cacheSet(fresh);
-        tracks = fresh;
-      } catch (e) {
-        // serve stale cache if refresh fails
-      }
+      // Serve stale immediately; refresh in the background so the
+      // visitor doesn't wait for the full SoundCloud refetch.
+      refreshCache().catch(() => {});
     }
 
     const mixes = [];

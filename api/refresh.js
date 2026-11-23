@@ -1,6 +1,11 @@
 import { cacheGet, cacheSet, fetchLikesFromSoundCloud } from './_lib.js';
 
 export default async function handler(req, res) {
+  const secret = process.env.CRON_SECRET;
+  if (secret && req.headers.authorization !== `Bearer ${secret}`) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
   try {
     const fresh = await fetchLikesFromSoundCloud();
     const { tracks: cached } = await cacheGet();

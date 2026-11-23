@@ -110,7 +110,40 @@ export async function collectionAdd(track) {
   return parseCollections(raw);
 }
 
+const CLIENT_ID_KEY = 'sc-likes-client-id';
+const CLIENT_ID_TTL_S = 24 * 60 * 60;
+
+async function redisGetRaw(key) {
+  const res = await fetch(`${UPSTASH_URL}/get/${key}`, {
+    headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` }
+  });
+  if (!res.ok) return null;
+  const { result } = await res.json();
+  return result || null;
+}
+
 export async function getClientId() {
+  if (UPSTASH_URL && UPSTASH_TOKEN) {
+    try {
+      const cached = await redisGetRaw(CLIENT_ID_KEY);
+      if (cached) return cached;
+    } catch (e) {
+      // fall through to scraping
+    }
+  }
+  const clientId = await scrapeClientId();
+  if (UPSTASH_URL && UPSTASH_TOKEN) {
+    // Best-effort: caching the id just avoids the scrape on the next rebuild.
+    fetch(`${UPSTASH_URL}/set/${CLIENT_ID_KEY}?EX=${CLIENT_ID_TTL_S}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` },
+      body: clientId
+    }).catch(() => {});
+  }
+  return clientId;
+}
+
+async function scrapeClientId() {
   const res = await fetch('https://soundcloud.com');
   const html = await res.text();
   const scripts = [...html.matchAll(/src="(https:\/\/a-v2\.sndcdn\.com\/assets\/[^"]+\.js)"/g)].map(m => m[1]);
