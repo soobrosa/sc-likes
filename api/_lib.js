@@ -754,7 +754,9 @@ export function renderPage(mixes, songs, collections = {}) {
     const groups = document.querySelectorAll('#tracks .year-group');
     for (const g of groups) {
       if (g.style.display !== 'none') {
-        g.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        // Instant: a smooth scroll over this page takes seconds and would
+        // override any year jump made right after switching tabs.
+        g.scrollIntoView({ behavior: 'auto', block: 'start' });
         break;
       }
     }
