@@ -210,9 +210,9 @@ function fmtDate(iso) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-function renderTrack(t, type) {
+function renderTrack(t, type, collected) {
   const year = new Date(t.created_at).getFullYear();
-  return `<li data-id="${t.id}" data-title="${esc(t.title)}" data-artist="${esc(t.user.username)}" data-type="${type}" data-year="${year}">
+  return `<li data-id="${t.id}" data-title="${esc(t.title)}" data-artist="${esc(t.user.username)}" data-type="${type}" data-year="${year}"${collected ? ' data-collected="1"' : ''}>
     <a href="#" data-url="${esc(t.permalink_url)}" onclick="play(this);return false">
       <div class="track-title">${esc(t.title)}</div>
       <div class="track-artist">${esc(t.user.username)}</div>
@@ -231,13 +231,20 @@ function groupByYear(taggedTracks) {
   return Object.keys(groups).sort((a, b) => b - a).map(y => ({ year: y, items: groups[y] }));
 }
 
-function renderYearGroups(groups) {
-  return groups.map(g =>
-    `<div class="year-group" data-year="${g.year}">
+function renderYearGroups(groups, collectedIds) {
+  return groups.map(g => {
+    const collected = g.items.filter(i => collectedIds[g.year] && collectedIds[g.year].has(String(i.track.id)));
+    const others = g.items.filter(i => !collected.includes(i));
+    const col = (label, items, isCollected) => `
+      <div class="col" data-col="${isCollected ? 'collected' : 'others'}">
+        <h4 class="col-label">${label}</h4>
+        <ul>${items.map(i => renderTrack(i.track, i.type, isCollected)).join('\n')}</ul>
+      </div>`;
+    return `<div class="year-group" data-year="${g.year}">
       <h3 class="year-header" id="y-${g.year}">${g.year} <span class="count">(${g.items.length})</span></h3>
-      <ul>${g.items.map(i => renderTrack(i.track, i.type)).join('\n')}</ul>
-    </div>`
-  ).join('\n');
+      <div class="year-cols">${col('Collected', collected, true)}${col('Others', others, false)}</div>
+    </div>`;
+  }).join('\n');
 }
 
 function yearNav(groups) {
@@ -274,6 +281,12 @@ export function renderPage(mixes, songs, collections = {}) {
   ].sort((a, b) => new Date(b.track.created_at) - new Date(a.track.created_at));
   const groups = groupByYear(tagged);
   const { groups: collectionGroupsHTML, empty: collectionsEmpty } = renderCollectionsHTML(collections);
+  const collectedIds = {};
+  for (const [year, items] of Object.entries(collections)) {
+    if (Array.isArray(items) && items.length) {
+      collectedIds[year] = new Set(items.map(i => String(i.id)));
+    }
+  }
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -335,7 +348,10 @@ export function renderPage(mixes, songs, collections = {}) {
   .year-header { font-family: 'Oswald', sans-serif; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 2px solid #000; padding-bottom: 0.2rem; margin-bottom: 0.75rem; position: sticky; top: var(--top-h, 0px); background: #fff; z-index: 10; padding-top: 0.3rem; }
   .year-header .count { font-size: 0.8rem; font-weight: 400; color: #888; }
 
-  ul { list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+  ul { list-style: none; display: grid; gap: 0.75rem; }
+  #collection-groups ul { grid-template-columns: 1fr 1fr; }
+  .year-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: start; }
+  .col-label { font-family: 'Oswald', sans-serif; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #888; margin-bottom: 0.4rem; }
   li { padding: 0.75rem; cursor: pointer; border: 1px solid #eee; }
   li:hover { background: #f5f5f5; border-color: #ccc; }
   li a { color: #000; text-decoration: none; display: block; }
@@ -353,7 +369,8 @@ export function renderPage(mixes, songs, collections = {}) {
     .toolbar { gap: 0.5rem; }
     #search { max-width: none; }
     #player iframe { height: 120px; }
-    ul { grid-template-columns: 1fr; }
+    #collection-groups ul { grid-template-columns: 1fr; }
+    .year-cols { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -390,7 +407,7 @@ export function renderPage(mixes, songs, collections = {}) {
 </section>
 
 <div id="tracks">
-  ${renderYearGroups(groups)}
+  ${renderYearGroups(groups, collectedIds)}
 </div>
 
 <script src="https://w.soundcloud.com/player/api.js"></script>
@@ -716,7 +733,8 @@ export function renderPage(mixes, songs, collections = {}) {
 
   document.querySelectorAll('.tabs button').forEach(btn => {
     btn.addEventListener('click', () => {
-      btn.classList.toggle('active');
+      if (btn.classList.contains('active')) return;
+      document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b === btn));
       applyFilter();
       scrollToFirstVisibleYear();
     });
@@ -725,15 +743,16 @@ export function renderPage(mixes, songs, collections = {}) {
   const search = document.getElementById('search');
   function applyFilter() {
     const q = search.value.toLowerCase();
-    const showMix = document.querySelector('[data-filter="mix"]').classList.contains('active');
-    const showSong = document.querySelector('[data-filter="song"]').classList.contains('active');
+    const showType = document.querySelector('.tabs button.active').dataset.filter;
     document.querySelectorAll('#tracks li').forEach(li => {
-      const type = li.dataset.type;
-      const typeVisible = (type === 'mix' && showMix) || (type === 'song' && showSong);
+      const typeVisible = li.dataset.collected || li.dataset.type === showType;
       const title = (li.dataset.title || '').toLowerCase();
       const artist = (li.dataset.artist || '').toLowerCase();
       const searchMatch = !q || title.includes(q) || artist.includes(q);
       li.classList.toggle('hidden', !typeVisible || !searchMatch);
+    });
+    document.querySelectorAll('#tracks .col').forEach(col => {
+      col.hidden = !col.querySelector('li:not(.hidden)');
     });
     document.querySelectorAll('#tracks .year-group').forEach(g => {
       const visible = g.querySelectorAll('li:not(.hidden)').length;
@@ -742,6 +761,7 @@ export function renderPage(mixes, songs, collections = {}) {
     schedulePrepareNext();
   }
   search.addEventListener('input', applyFilter);
+  applyFilter();
 </script>
 </body>
 </html>`;
