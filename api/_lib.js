@@ -259,8 +259,15 @@ export function renderPage(mixes, songs) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>soobrosa likes</title>
-<link href="https://fonts.googleapis.com/css2?family=Courier+Prime&family=Oswald:wght@400;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://w.soundcloud.com" crossorigin>
+<link rel="dns-prefetch" href="https://w.soundcloud.com">
+<link rel="preload" href="/fonts/courier-prime-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/courier-prime-700.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/oswald-var.woff2" as="font" type="font/woff2" crossorigin>
 <style>
+  @font-face { font-family: 'Courier Prime'; font-style: normal; font-weight: 400; font-display: swap; src: url(/fonts/courier-prime-400.woff2) format('woff2'); }
+  @font-face { font-family: 'Courier Prime'; font-style: normal; font-weight: 700; font-display: swap; src: url(/fonts/courier-prime-700.woff2) format('woff2'); }
+  @font-face { font-family: 'Oswald'; font-style: normal; font-weight: 200 700; font-display: swap; src: url(/fonts/oswald-var.woff2) format('woff2'); }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html { scroll-padding-top: var(--top-h, 0px); }
   body { font-family: 'Courier Prime', monospace; background: #fff; color: #000; padding: 2rem; max-width: 1200px; margin: 0 auto; }
@@ -302,7 +309,7 @@ export function renderPage(mixes, songs) {
   .collection-year + .collection-year { margin-top: 1rem; }
   .collection-year h3 { font-family: 'Oswald', sans-serif; font-size: 1rem; border-bottom: 1px solid #000; margin-bottom: 0.5rem; }
 
-  .year-group { margin-bottom: 2rem; }
+  .year-group { margin-bottom: 2rem; content-visibility: auto; contain-intrinsic-size: auto 600px; }
   .year-header { font-family: 'Oswald', sans-serif; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 2px solid #000; padding-bottom: 0.2rem; margin-bottom: 0.75rem; position: sticky; top: var(--top-h, 0px); background: #fff; z-index: 10; padding-top: 0.3rem; }
   .year-header .count { font-size: 0.8rem; font-weight: 400; color: #888; }
 
