@@ -33,7 +33,7 @@ export default async function handler(req, res) {
     }
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate');
+    res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=300');
     res.status(200).send(renderPage(mixes, songs, collections));
   } catch (e) {
     res.status(500).send(`<pre>Error: ${e.message}</pre>`);
