@@ -324,7 +324,7 @@ export function renderPage(mixes, songs, collections = {}) {
   .year-header .count { font-size: 0.8rem; font-weight: 400; color: #888; }
 
   ul { list-style: none; display: grid; gap: 0.75rem; }
-  .year-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: start; }
+  .year-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 1.5rem; align-items: start; }
   .col-label { font-family: 'Oswald', sans-serif; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #888; margin-bottom: 0.4rem; }
   li { padding: 0.75rem; cursor: pointer; border: 1px solid #eee; }
   li:hover { background: #f5f5f5; border-color: #ccc; }
