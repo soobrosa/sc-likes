@@ -253,34 +253,12 @@ function yearNav(groups) {
   ).join(' ');
 }
 
-function renderCollectionsHTML(collections) {
-  const years = Object.keys(collections)
-    .filter(year => Array.isArray(collections[year]) && collections[year].length)
-    .sort((a, b) => Number(b) - Number(a));
-  const groups = years.map(year =>
-    `<div class="collection-year">
-      <h3>${esc(year)} (${collections[year].length})</h3>
-      <ul>${collections[year].map(item =>
-        `<li data-id="${esc(item.id)}" data-title="${esc(item.title)}" data-artist="${esc(item.artist)}" data-type="mix" data-year="${esc(year)}">
-          <a href="#" data-url="${esc(item.url)}" onclick="play(this);return false">
-            <div class="track-title">${esc(item.title)}</div>
-            <div class="track-artist">${esc(item.artist)}</div>
-            <div class="track-meta">${esc(item.meta)}</div>
-          </a>
-        </li>`
-      ).join('\n')}</ul>
-    </div>`
-  ).join('\n');
-  return { groups, empty: years.length === 0 };
-}
-
 export function renderPage(mixes, songs, collections = {}) {
   const tagged = [
     ...mixes.map(t => ({ track: t, type: 'mix' })),
     ...songs.map(t => ({ track: t, type: 'song' }))
   ].sort((a, b) => new Date(b.track.created_at) - new Date(a.track.created_at));
   const groups = groupByYear(tagged);
-  const { groups: collectionGroupsHTML, empty: collectionsEmpty } = renderCollectionsHTML(collections);
   const collectedIds = {};
   for (const [year, items] of Object.entries(collections)) {
     if (Array.isArray(items) && items.length) {
@@ -338,12 +316,6 @@ export function renderPage(mixes, songs, collections = {}) {
   #player iframe { display: none; width: 100%; height: 125px; border: none; }
   #player iframe.active { display: block; }
 
-  #collections { margin: 1.5rem 0 2rem; border: 2px solid #000; padding: 1rem; }
-  #collections[hidden] { display: none; }
-  #collections h2 { font-family: 'Oswald', sans-serif; font-size: 1.1rem; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.75rem; }
-  .collection-year + .collection-year { margin-top: 1rem; }
-  .collection-year h3 { font-family: 'Oswald', sans-serif; font-size: 1rem; border-bottom: 1px solid #000; margin-bottom: 0.5rem; }
-
   .year-group { margin-bottom: 2rem; }
   /* Spacer so the last, short year groups can still scroll flush under
      the sticky bar like every other year. */
@@ -352,7 +324,6 @@ export function renderPage(mixes, songs, collections = {}) {
   .year-header .count { font-size: 0.8rem; font-weight: 400; color: #888; }
 
   ul { list-style: none; display: grid; gap: 0.75rem; }
-  #collection-groups ul { grid-template-columns: 1fr 1fr; }
   .year-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: start; }
   .col-label { font-family: 'Oswald', sans-serif; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #888; margin-bottom: 0.4rem; }
   li { padding: 0.75rem; cursor: pointer; border: 1px solid #eee; }
@@ -372,7 +343,6 @@ export function renderPage(mixes, songs, collections = {}) {
     .toolbar { gap: 0.5rem; }
     #search { max-width: none; }
     #player iframe { height: 120px; }
-    #collection-groups ul { grid-template-columns: 1fr; }
     .year-cols { grid-template-columns: 1fr; }
   }
 </style>
@@ -404,11 +374,6 @@ export function renderPage(mixes, songs, collections = {}) {
   </div>
 </div>
 
-<section id="collections" ${collectionsEmpty ? 'hidden' : ''}>
-  <h2>Collected mixes</h2>
-  <div id="collection-groups">${collectionGroupsHTML}</div>
-</section>
-
 <div id="tracks">
   ${renderYearGroups(groups, collectedIds)}
 </div>
@@ -419,8 +384,6 @@ export function renderPage(mixes, songs, collections = {}) {
   const stickyTop = document.querySelector('.sticky-top');
   const collectButton = document.getElementById('collect-current');
   const collectStatus = document.getElementById('collect-status');
-  const collectionsSection = document.getElementById('collections');
-  const collectionGroups = document.getElementById('collection-groups');
   const OPTS = { auto_play: true, color: '000000', show_artwork: true, show_comments: false, show_playcount: false, show_teaser: false, visual: false };
   const slots = [
     { iframe: document.getElementById('sc-widget-a'), widget: null, url: null, ready: false, loadToken: 0, readyCallbacks: [] },
@@ -435,7 +398,6 @@ export function renderPage(mixes, songs, collections = {}) {
       if (!response.ok) throw new Error('Could not load collections');
       collections = await response.json();
       collectionsReady = true;
-      renderCollections();
       updateCollectButton();
     } catch (e) {
       collectionsReady = false;
@@ -471,51 +433,19 @@ export function renderPage(mixes, songs, collections = {}) {
     collectButton.textContent = collected ? 'Collected in ' + year : 'Collect in ' + year;
   }
 
-  function renderCollections() {
-    collectionGroups.replaceChildren();
-    const years = Object.keys(collections)
-      .filter(function(year) { return Array.isArray(collections[year]) && collections[year].length; })
-      .sort(function(a, b) { return Number(b) - Number(a); });
-    collectionsSection.hidden = years.length === 0;
-
-    years.forEach(function(year) {
-      const group = document.createElement('div');
-      group.className = 'collection-year';
-      const heading = document.createElement('h3');
-      heading.textContent = year + ' (' + collections[year].length + ')';
-      const list = document.createElement('ul');
-
-      collections[year].forEach(function(item) {
-        const li = document.createElement('li');
-        li.dataset.id = item.id;
-        li.dataset.title = item.title;
-        li.dataset.artist = item.artist;
-        li.dataset.type = 'mix';
-        li.dataset.year = year;
-        const link = document.createElement('a');
-        link.href = '#';
-        link.dataset.url = item.url;
-        link.addEventListener('click', function(event) {
-          event.preventDefault();
-          play(link);
-        });
-        const title = document.createElement('div');
-        title.className = 'track-title';
-        title.textContent = item.title;
-        const artist = document.createElement('div');
-        artist.className = 'track-artist';
-        artist.textContent = item.artist;
-        const meta = document.createElement('div');
-        meta.className = 'track-meta';
-        meta.textContent = item.meta;
-        link.append(title, artist, meta);
-        li.appendChild(link);
-        list.appendChild(li);
-      });
-
-      group.append(heading, list);
-      collectionGroups.appendChild(group);
-    });
+  function moveToCollected(li) {
+    li.dataset.collected = '1';
+    const group = li.closest('.year-group');
+    let col = group.querySelector('.col[data-col="collected"]');
+    if (!col) {
+      col = document.createElement('div');
+      col.className = 'col';
+      col.dataset.col = 'collected';
+      col.innerHTML = '<h4 class="col-label">Collected</h4><ul></ul>';
+      group.querySelector('.year-cols').insertBefore(col, group.querySelector('.col[data-col="others"]'));
+    }
+    col.querySelector('ul').appendChild(li);
+    applyFilter();
   }
 
   collectButton.addEventListener('click', async function() {
@@ -532,7 +462,7 @@ export function renderPage(mixes, songs, collections = {}) {
       });
       if (!response.ok) throw new Error('Could not save collection');
       collections = await response.json();
-      renderCollections();
+      moveToCollected(currentLi);
       updateCollectButton();
       collectStatus.textContent = 'Added to ' + year;
     } catch (e) {

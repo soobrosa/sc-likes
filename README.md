@@ -6,8 +6,8 @@ Live at [sc-likes.vercel.app](https://sc-likes.vercel.app)
 
 ## How it works
 
-- Single page with all liked tracks grouped by year, displayed in a two-column grid
-- **Mixes** and **Songs** toggle buttons (non-exclusive) to filter by type, plus a text search
+- Single page with all liked tracks grouped by year; each year splits into two columns, collected mixes on the left and everything else on the right
+- **Mixes** and **Songs** tabs are exclusive: exactly one is active at a time, plus a text search
 - Year navigation bar for quick jumping
 - Clicking a track plays it inline via the SoundCloud embedded player; auto-advances to the next visible track when finished
 - The current mix can be collected into a Redis-backed list named for its publication year
