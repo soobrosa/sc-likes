@@ -721,14 +721,27 @@ export function renderPage(mixes, songs, collections = {}) {
     updateTopHeight();
   }
 
+  function nearestVisibleGroup(el) {
+    if (el.offsetHeight > 0) return el;
+    const groups = Array.from(document.querySelectorAll('#tracks .year-group'));
+    const idx = groups.indexOf(el);
+    for (let d = 1; d < groups.length; d++) {
+      if (groups[idx + d] && groups[idx + d].offsetHeight > 0) return groups[idx + d];
+      if (groups[idx - d] && groups[idx - d].offsetHeight > 0) return groups[idx - d];
+    }
+    return null;
+  }
+
   document.querySelectorAll('.year-nav a').forEach(a => {
     a.addEventListener('click', function(e) {
       e.preventDefault();
-      const el = document.getElementById(a.getAttribute('href').slice(1));
-      if (!el) return;
+      // A year with nothing visible under the active filter is collapsed;
+      // jump to the nearest visible year instead of a zero-height target.
+      const target = nearestVisibleGroup(document.getElementById(a.getAttribute('href').slice(1)));
+      if (!target) return;
       // Manual scroll: native anchor + scroll-padding lands wrong in Safari.
       const align = function() {
-        window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - stickyTop.offsetHeight);
+        window.scrollTo(0, target.getBoundingClientRect().top + window.scrollY - stickyTop.offsetHeight);
       };
       align();
       requestAnimationFrame(function() { requestAnimationFrame(align); });
