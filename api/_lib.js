@@ -345,7 +345,7 @@ export function renderPage(mixes, songs, collections = {}) {
   .collection-year h3 { font-family: 'Oswald', sans-serif; font-size: 1rem; border-bottom: 1px solid #000; margin-bottom: 0.5rem; }
 
   .year-group { margin-bottom: 2rem; }
-  .year-header { font-family: 'Oswald', sans-serif; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 2px solid #000; padding-bottom: 0.2rem; margin-bottom: 0.75rem; position: sticky; top: var(--top-h, 0px); background: #fff; z-index: 10; padding-top: 0.3rem; scroll-margin-top: calc(var(--top-h, 0px) + 8px); }
+  .year-header { font-family: 'Oswald', sans-serif; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 2px solid #000; padding-bottom: 0.2rem; margin-bottom: 0.75rem; position: sticky; top: var(--top-h, 0px); background: #fff; z-index: 10; padding-top: 0.3rem; scroll-margin-top: var(--top-h, 0px); }
   .year-header .count { font-size: 0.8rem; font-weight: 400; color: #888; }
 
   ul { list-style: none; display: grid; gap: 0.75rem; }
@@ -728,7 +728,7 @@ export function renderPage(mixes, songs, collections = {}) {
       if (!el) return;
       // Manual scroll: native anchor + scroll-padding lands wrong in Safari.
       const align = function() {
-        window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - stickyTop.offsetHeight + 8);
+        window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - stickyTop.offsetHeight);
       };
       align();
       requestAnimationFrame(function() { requestAnimationFrame(align); });
