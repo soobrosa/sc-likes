@@ -1,4 +1,4 @@
-import { cacheGet, cacheSet, fetchLikesFromSoundCloud, isMix, renderPage } from './_lib.js';
+import { cacheGet, cacheSet, collectionsGet, fetchLikesFromSoundCloud, isMix, renderPage } from './_lib.js';
 
 async function refreshCache() {
   const fresh = await fetchLikesFromSoundCloud();
@@ -24,9 +24,17 @@ export default async function handler(req, res) {
       (isMix(t) ? mixes : songs).push(t);
     }
 
+    // Rendered server-side so the section never appears after load (CLS).
+    let collections = {};
+    try {
+      collections = await collectionsGet();
+    } catch (e) {
+      // Collections stay hidden if Redis is unavailable
+    }
+
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate');
-    res.status(200).send(renderPage(mixes, songs));
+    res.status(200).send(renderPage(mixes, songs, collections));
   } catch (e) {
     res.status(500).send(`<pre>Error: ${e.message}</pre>`);
   }

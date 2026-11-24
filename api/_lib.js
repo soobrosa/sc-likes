@@ -246,12 +246,34 @@ function yearNav(groups) {
   ).join(' ');
 }
 
-export function renderPage(mixes, songs) {
+function renderCollectionsHTML(collections) {
+  const years = Object.keys(collections)
+    .filter(year => Array.isArray(collections[year]) && collections[year].length)
+    .sort((a, b) => Number(b) - Number(a));
+  const groups = years.map(year =>
+    `<div class="collection-year">
+      <h3>${esc(year)} (${collections[year].length})</h3>
+      <ul>${collections[year].map(item =>
+        `<li data-id="${esc(item.id)}" data-title="${esc(item.title)}" data-artist="${esc(item.artist)}" data-type="mix" data-year="${esc(year)}">
+          <a href="#" data-url="${esc(item.url)}" onclick="play(this);return false">
+            <div class="track-title">${esc(item.title)}</div>
+            <div class="track-artist">${esc(item.artist)}</div>
+            <div class="track-meta">${esc(item.meta)}</div>
+          </a>
+        </li>`
+      ).join('\n')}</ul>
+    </div>`
+  ).join('\n');
+  return { groups, empty: years.length === 0 };
+}
+
+export function renderPage(mixes, songs, collections = {}) {
   const tagged = [
     ...mixes.map(t => ({ track: t, type: 'mix' })),
     ...songs.map(t => ({ track: t, type: 'song' }))
   ].sort((a, b) => new Date(b.track.created_at) - new Date(a.track.created_at));
   const groups = groupByYear(tagged);
+  const { groups: collectionGroupsHTML, empty: collectionsEmpty } = renderCollectionsHTML(collections);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -362,9 +384,9 @@ export function renderPage(mixes, songs) {
   </div>
 </div>
 
-<section id="collections" hidden>
+<section id="collections" ${collectionsEmpty ? 'hidden' : ''}>
   <h2>Collected mixes</h2>
-  <div id="collection-groups"></div>
+  <div id="collection-groups">${collectionGroupsHTML}</div>
 </section>
 
 <div id="tracks">
